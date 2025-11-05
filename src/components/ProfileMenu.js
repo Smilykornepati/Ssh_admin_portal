@@ -12,3 +12,5 @@ const ProfileMenu = ({ onLogout }) => {
     </div>
   );
 };
+
+export default ProfileMenu;
