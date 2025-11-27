@@ -1,65 +1,122 @@
-import React, { useState } from 'react';
+// [file name]: HotelApproval.js
+
+import React, { useState, useEffect } from 'react';
 
 const HotelApproval = () => {
   const [activeTab, setActiveTab] = useState('pending');
   const [selectedHotel, setSelectedHotel] = useState(null);
-  const [pendingHotels, setPendingHotels] = useState([
-    {
-      id: 1,
-      name: "Hotel Sunset View",
-      location: "Mumbai, Maharashtra",
-      ownerName: "Rajesh Kumar",
-      ownerEmail: "rajesh@email.com",
-      phone: "+91 98765 43210",
-      gst: "27AABCU9603R1ZM",
-      address: "123 Marine Drive, Mumbai - 400001",
-      rooms: 25,
-      pricePerHour: 500,
-      amenities: ["WiFi", "AC", "Parking", "TV"],
-      images: 4,
-      submittedDate: "2025-10-20"
-    },
-    {
-      id: 2,
-      name: "Grand Stay Inn",
-      location: "Pune, Maharashtra",
-      ownerName: "Priya Sharma",
-      ownerEmail: "priya@email.com",
-      phone: "+91 98765 43211",
-      gst: "27AABCU9603R1ZN",
-      address: "456 FC Road, Pune - 411004",
-      rooms: 18,
-      pricePerHour: 400,
-      amenities: ["WiFi", "AC", "Restaurant"],
-      images: 3,
-      submittedDate: "2025-10-22"
+  const [pendingHotels, setPendingHotels] = useState([]);
+  const [approvedHotels, setApprovedHotels] = useState([]);
+  const [rejectedHotels, setRejectedHotels] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  // Fetch hotels based on status
+  const fetchHotels = async (status) => {
+    try {
+      const response = await fetch(`http://localhost:8000/api/hotels/registrations?status=${status}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const result = await response.json();
+      
+      if (result.success) {
+        return result.data;
+      }
+      throw new Error(result.message || 'Failed to fetch data');
+    } catch (error) {
+      console.error(`Error fetching ${status} hotels:`, error);
+      setError(`Failed to load ${status} hotels: ${error.message}`);
+      return [];
     }
-  ]);
-
-  const [approvedHotels, setApprovedHotels] = useState([
-    { id: 3, name: "Hotel Sunshine", location: "Mumbai, Maharashtra", approvedDate: "2025-10-15", rooms: 30, status: "Active" }
-  ]);
-
-  const [rejectedHotels, setRejectedHotels] = useState([
-    { id: 4, name: "Budget Stay", location: "Thane, Maharashtra", rejectedDate: "2025-10-18", reason: "Incomplete documentation" }
-  ]);
-
-  const handleApprove = (hotel) => {
-    setPendingHotels(pendingHotels.filter(h => h.id !== hotel.id));
-    setApprovedHotels([...approvedHotels, { ...hotel, approvedDate: new Date().toISOString().split('T')[0], status: 'Active' }]);
-    setSelectedHotel(null);
-    alert(`Hotel ${hotel.name} approved successfully!`);
   };
 
-  const handleReject = (hotel) => {
+  // Load all hotels
+  const loadAllHotels = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [pending, approved, rejected] = await Promise.all([
+        fetchHotels('pending'),
+        fetchHotels('approved'),
+        fetchHotels('rejected')
+      ]);
+
+      setPendingHotels(pending);
+      setApprovedHotels(approved);
+      setRejectedHotels(rejected);
+    } catch (error) {
+      console.error('Error loading hotels:', error);
+      setError('Failed to load hotels: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAllHotels();
+  }, []);
+
+  const handleApprove = async (hotel) => {
+    try {
+      const response = await fetch(`http://localhost:8000/api/hotels/registrations/${hotel._id}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: 'approved' })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        await loadAllHotels();
+        setSelectedHotel(null);
+        alert(`Hotel ${hotel.name} approved successfully!`);
+      } else {
+        alert('Error approving hotel: ' + result.message);
+      }
+    } catch (error) {
+      console.error('Approval error:', error);
+      alert('Error approving hotel. Please try again.');
+    }
+  };
+
+  const handleReject = async (hotel) => {
     const reason = prompt('Enter rejection reason:');
     if (reason) {
-      setPendingHotels(pendingHotels.filter(h => h.id !== hotel.id));
-      setRejectedHotels([...rejectedHotels, { ...hotel, rejectedDate: new Date().toISOString().split('T')[0], reason }]);
-      setSelectedHotel(null);
-      alert(`Hotel ${hotel.name} rejected.`);
+      try {
+        const response = await fetch(`http://localhost:8000/api/hotels/registrations/${hotel._id}/status`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ status: 'rejected', reason })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          await loadAllHotels();
+          setSelectedHotel(null);
+          alert(`Hotel ${hotel.name} rejected.`);
+        } else {
+          alert('Error rejecting hotel: ' + result.message);
+        }
+      } catch (error) {
+        console.error('Rejection error:', error);
+        alert('Error rejecting hotel. Please try again.');
+      }
     }
   };
+
+  if (loading) {
+    return (
+      <div className="page-container">
+        <div className="text-center py-8">Loading hotel registrations...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="page-container">
@@ -67,6 +124,18 @@ const HotelApproval = () => {
         <h2>Hotel Approval System</h2>
         <p>Review and approve hotel registration requests</p>
       </div>
+
+      {error && (
+        <div className="mb-4 p-3 bg-red-500/20 border border-red-500 rounded-xl text-red-200">
+          ❌ {error}
+          <button 
+            onClick={loadAllHotels}
+            className="ml-4 px-3 py-1 bg-red-500 rounded text-white text-sm"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       <div className="tabs">
         <button className={`tab ${activeTab === 'pending' ? 'active' : ''}`} onClick={() => setActiveTab('pending')}>
@@ -83,18 +152,16 @@ const HotelApproval = () => {
       {activeTab === 'pending' && (
         <div className="hotels-grid">
           {pendingHotels.map(hotel => (
-            <div key={hotel.id} className="hotel-card">
+            <div key={hotel._id} className="hotel-card">
               <div className="hotel-card-header">
                 <h3>{hotel.name}</h3>
                 <span className="badge-pending">Pending</span>
               </div>
               <div className="hotel-info">
-                <p><strong>Location:</strong> {hotel.location}</p>
-                <p><strong>Owner:</strong> {hotel.ownerName}</p>
+                <p><strong>Phone:</strong> {hotel.phone}</p>
                 <p><strong>GST:</strong> {hotel.gst}</p>
-                <p><strong>Rooms:</strong> {hotel.rooms}</p>
-                <p><strong>Price/Hour:</strong> ₹{hotel.pricePerHour}</p>
-                <p><strong>Submitted:</strong> {hotel.submittedDate}</p>
+                <p><strong>Aadhar:</strong> {hotel.aadhar}</p>
+                <p><strong>Submitted:</strong> {new Date(hotel.submittedAt).toLocaleDateString()}</p>
               </div>
               <div className="hotel-actions">
                 <button className="btn-view" onClick={() => setSelectedHotel(hotel)}>View Details</button>
@@ -103,41 +170,53 @@ const HotelApproval = () => {
               </div>
             </div>
           ))}
+          {pendingHotels.length === 0 && (
+            <div className="text-center py-8 text-gray-500">No pending registrations</div>
+          )}
         </div>
       )}
 
       {activeTab === 'approved' && (
         <div className="hotels-list">
           {approvedHotels.map(hotel => (
-            <div key={hotel.id} className="hotel-list-item">
+            <div key={hotel._id} className="hotel-list-item">
               <div>
                 <h3>{hotel.name}</h3>
-                <p>{hotel.location}</p>
+                <p>{hotel.businessAddress}</p>
+                <p className="text-sm text-gray-400">Phone: {hotel.phone}</p>
               </div>
               <div className="hotel-list-meta">
-                <span className="badge-approved">{hotel.status}</span>
-                <span className="date">Approved: {hotel.approvedDate}</span>
+                <span className="badge-approved">Approved</span>
+                <span className="date">Submitted: {new Date(hotel.submittedAt).toLocaleDateString()}</span>
               </div>
             </div>
           ))}
+          {approvedHotels.length === 0 && (
+            <div className="text-center py-8 text-gray-500">No approved registrations</div>
+          )}
         </div>
       )}
 
       {activeTab === 'rejected' && (
         <div className="hotels-list">
           {rejectedHotels.map(hotel => (
-            <div key={hotel.id} className="hotel-list-item">
+            <div key={hotel._id} className="hotel-list-item">
               <div>
                 <h3>{hotel.name}</h3>
-                <p>{hotel.location}</p>
-                <p className="rejection-reason">Reason: {hotel.reason}</p>
+                <p>{hotel.businessAddress}</p>
+                {hotel.rejectionReason && (
+                  <p className="rejection-reason">Reason: {hotel.rejectionReason}</p>
+                )}
               </div>
               <div className="hotel-list-meta">
                 <span className="badge-rejected">Rejected</span>
-                <span className="date">Rejected: {hotel.rejectedDate}</span>
+                <span className="date">Submitted: {new Date(hotel.submittedAt).toLocaleDateString()}</span>
               </div>
             </div>
           ))}
+          {rejectedHotels.length === 0 && (
+            <div className="text-center py-8 text-gray-500">No rejected registrations</div>
+          )}
         </div>
       )}
 
@@ -156,34 +235,19 @@ const HotelApproval = () => {
               <div className="detail-section">
                 <h4>Hotel Information</h4>
                 <p><strong>Name:</strong> {selectedHotel.name}</p>
-                <p><strong>Location:</strong> {selectedHotel.location}</p>
-                <p><strong>Address:</strong> {selectedHotel.address}</p>
-                <p><strong>Total Rooms:</strong> {selectedHotel.rooms}</p>
-                <p><strong>Price per Hour:</strong> ₹{selectedHotel.pricePerHour}</p>
-              </div>
-              <div className="detail-section">
-                <h4>Owner Details</h4>
-                <p><strong>Name:</strong> {selectedHotel.ownerName}</p>
-                <p><strong>Email:</strong> {selectedHotel.ownerEmail}</p>
                 <p><strong>Phone:</strong> {selectedHotel.phone}</p>
+                <p><strong>Address:</strong> {selectedHotel.address}</p>
+                <p><strong>Business Address:</strong> {selectedHotel.businessAddress}</p>
+              </div>
+              <div className="detail-section">
+                <h4>Document Details</h4>
                 <p><strong>GST Number:</strong> {selectedHotel.gst}</p>
+                <p><strong>Aadhar Number:</strong> {selectedHotel.aadhar}</p>
               </div>
               <div className="detail-section">
-                <h4>Amenities</h4>
-                <div className="amenities-list">
-                  {selectedHotel.amenities.map((amenity, i) => (
-                    <span key={i} className="amenity-badge">{amenity}</span>
-                  ))}
-                </div>
-              </div>
-              <div className="detail-section">
-                <h4>Room Images</h4>
-                <p>{selectedHotel.images} images uploaded</p>
-                <div className="image-grid">
-                  {[...Array(selectedHotel.images)].map((_, i) => (
-                    <div key={i} className="image-placeholder">Image {i + 1}</div>
-                  ))}
-                </div>
+                <h4>Submission Details</h4>
+                <p><strong>Submitted:</strong> {new Date(selectedHotel.submittedAt).toLocaleString()}</p>
+                <p><strong>Status:</strong> <span className={`badge-${selectedHotel.status}`}>{selectedHotel.status}</span></p>
               </div>
               <div className="modal-actions">
                 <button className="btn-approve" onClick={() => handleApprove(selectedHotel)}>Approve Hotel</button>
